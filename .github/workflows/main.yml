@@ -28,7 +28,7 @@ jobs:
         run: |
           pyinstaller --onefile --windowed --name ImageLabeller main.py config.py data_manager.py --noconfirm
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: executable-${{ matrix.os }}
           path: dist/
