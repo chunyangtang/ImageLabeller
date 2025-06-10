@@ -11,6 +11,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
         python-version: [3.10]
+        arch: [x64, arm64]
 
     steps:
       - uses: actions/checkout@v2
@@ -25,9 +26,34 @@ jobs:
           pip install -r requirements.txt
       - name: Build executable
         run: |
-          pyinstaller --onefile your_script.py
+          pyinstaller --onefile --windowed --name ImageLabeller main.py config.py data_manager.py --noconfirm
       - name: Upload artifacts
         uses: actions/upload-artifact@v2
         with:
           name: executable-${{ matrix.os }}
           path: dist/
+      - name: Zip macOS .app (if applicable)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd dist
+          zip -r ImageLabeller.app.zip ImageLabeller.app
+          cd ..
+      - name: Create Release Asset
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: |
+            ${{ matrix.os == 'windows-latest' && './dist/ImageLabeller.exe' || '' }}
+            ${{ matrix.os == 'macos-latest' && './dist/ImageLabeller.app.zip' || '' }}
+            ${{ matrix.os == 'ubuntu-latest' && './dist/ImageLabeller' || '' }}
+          asset_name: |
+            ${{ matrix.os == 'windows-latest' && 'ImageLabeller-windows-${{ matrix.arch }}.exe' || '' }}
+            ${{ matrix.os == 'macos-latest' && 'ImageLabeller-macos-${{ matrix.arch }}.app.zip' || '' }}
+            ${{ matrix.os == 'ubuntu-latest' && 'ImageLabeller-linux-${{ matrix.arch }}' || '' }}
+          asset_content_type: |
+            ${{ matrix.os == 'windows-latest' && 'application/vnd.microsoft.portable-executable' || '' }}
+            ${{ matrix.os == 'macos-latest' && 'application/zip' || '' }}
+            ${{ matrix.os == 'ubuntu-latest' && 'application/octet-stream' || '' }}
