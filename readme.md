@@ -32,21 +32,35 @@ A minimal image labelling tool to label tag and discription for images. Built wi
             "name_4": "<key-4>",
         }
     ],
-    "common_phrases": [
-        [
-            "Example1",
-            "Example2"
+    "common_phrases": {
+        "name_1": [
+            [
+                "Example1",
+                "Example2"
+            ],
+            [
+                "Example3",
+                "Example4"
+            ]
         ],
-        [
-            "Example3",
-            "Example4"
+        "name_2": [
+            [
+                "Example5",
+                "Example6"
+            ],
+            [
+                "Example7",
+                "Example8"
+            ]
         ]
-    ], 
+    },
     "seperator": "suffix of your common phrase"
 }
 ```
 - "<key-1>", "<key-2>" should be a single character, which will be used as a keyboard shortcut to add the tag.
 - Use multiple items in the list to create multiple lines of tags in `label_groups` and `common_phrases`.
+- The content of `common_phrases["label_name"]` will only appear when the label is selected in the `label_groups` section.
+- The `seperator` will be added to the end of each common phrase when it is added to the description field.
 
 
 ### `program_config.json` example

@@ -141,3 +141,4 @@ cython_debug/
 image_data/
 program_config.json
 data_config.json
+.DS_Store

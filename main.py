@@ -89,6 +89,13 @@ class AnnotationUI(tk.Tk):
         self._setup_ui()
         self._bind_events()
         self.load_image()
+        self.after(100, self._activate_on_windows)  # Activate the window after a short delay
+
+    def _activate_on_windows(self):
+        # Lift the window to the top and focus it
+        self.lift()
+        self.focus_force()
+        self.desc_entry.focus_set()
 
     def _setup_ui(self):
         # Title
@@ -135,8 +142,17 @@ class AnnotationUI(tk.Tk):
         self.info_frame = ttk.Frame(self)
         self.info_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        self.filename_label = ttk.Label(self.info_frame, text="")
-        self.filename_label.pack(side=tk.LEFT)
+        # A read‐only Entry for filename so users can select/copy them
+        self.filename_var = tk.StringVar()
+        self.filename_entry = ttk.Entry(
+            self.info_frame,
+            textvariable=self.filename_var,
+            state='readonly',
+            width=0,
+        )
+        self.filename_entry.config(width=len(self.filename_var.get()) + 2)
+        self.filename_var.trace_add("write", lambda *args: self.filename_entry.config(width=len(self.filename_var.get()) + 2))
+        self.filename_entry.pack(side=tk.LEFT)
         
         self.progress_label = ttk.Label(self.info_frame, text="")
         self.progress_label.pack(side=tk.RIGHT)
@@ -149,22 +165,29 @@ class AnnotationUI(tk.Tk):
         self.desc_entry_row = ttk.Frame(self.desc_frame)
         self.desc_entry_row.pack(fill=tk.X)
         self.desc_entry = tk.Entry(self.desc_entry_row, width=60)
-        self.desc_entry.pack(side=tk.LEFT, padx=(0, 10), fill=tk.X, expand=True)
+        self.desc_entry.pack(side=tk.LEFT, padx=(0,10), fill=tk.X, expand=True)
         self.desc_entry.bind("<KeyRelease>", lambda e: self.save_current_annotation())
 
         # - Description options
-        desc_options = self.data_config.get("common_phrases", [])
+        desc_options = self.data_config.get("common_phrases", {})
         seperator = self.data_config.get("seperator", "")
-        for row in desc_options:
-            row_frame = ttk.Frame(self.desc_frame)
-            row_frame.pack(fill=tk.X, pady=(2, 0))
-            for opt in row:
-                btn = ttk.Button(
-                    row_frame,
-                    text=opt,
-                    command=lambda o=opt: self.append_desc_option(o, seperator)
-                )
-                btn.pack(side=tk.LEFT, padx=2)
+
+        # --- dynamic description options container ---
+        # we create an empty frame; options will be injected based on selected labels
+        # – Reserve space for 3 rows of buttons –
+        # estimate each row ~30px high (tweak as needed)
+        row_height = 30
+        reserve = 3
+        # store for dynamic resizing later
+        self.desc_row_height = row_height
+        self.desc_reserve = reserve
+
+        self.desc_options_container = ttk.Frame(self.desc_frame, height=row_height * reserve)
+        self.desc_options_container.pack(fill=tk.X, pady=(2,0))
+        self.desc_options_container.pack_propagate(False)  # do not let children shrink it below its set height
+
+        # keep track of each label’s Frames so we can remove them individually
+        self.desc_option_frames = {}
 
         # Log area
         self.log_frame = ttk.Frame(self)
@@ -183,7 +206,8 @@ class AnnotationUI(tk.Tk):
         self.bind("<Left>", self.previous_image)
 
         self.bind("<Control-z>", self.undo_last_action)
-        self.bind("<Configure>", self._resize_image)
+        # self.bind("<Configure>", self._resize_image)
+        self.canvas.bind("<Configure>", lambda e: self._show_image())
         # Bind label keys
         for key in self.label_key_map:
             self.bind(f"<Key-{key}>", self._on_label_key_press)
@@ -198,11 +222,14 @@ class AnnotationUI(tk.Tk):
         self._show_image()
         
         # Update UI elements
-        self.filename_label.config(text=os.path.basename(image_path))
+        # self.filename_label.config(text=os.path.basename(image_path))
+        # Update UI elements
+        # now using the read-only Entry’s StringVar
+        self.filename_var.set(os.path.basename(image_path))
         self.progress_label.config(
             text=f"{self.data_manager.current_index+1}/{len(self.data_manager.image_files)}"
         )
-        self.log_message(f"Loaded image: {self.filename_label.cget('text')}")
+        self.log_message(f"Loaded image: {os.path.basename(image_path)}")
 
         # Load current annotation
         annotation = self.data_manager.get_current_annotation()
@@ -212,6 +239,8 @@ class AnnotationUI(tk.Tk):
         # - Update selected labels
         self.selected_labels = set(annotation.get("labels", []))
         self.refresh_label_buttons()
+        # after refreshing labels, populate options for existing labels
+        self.update_desc_options()
 
     def _show_image(self):
         # Resize and display the current image on the canvas
@@ -267,13 +296,35 @@ class AnnotationUI(tk.Tk):
                 btn.config(relief="raised", bg=color)      # Reset to original color when not selected
 
     def toggle_label(self, label, key):
-        # Toggle the label selection state
+        """Toggle label, then add or remove its option rows."""
         if label in self.selected_labels:
             self.selected_labels.remove(label)
+            self._remove_desc_options(label)
         else:
             self.selected_labels.add(label)
+            self._add_desc_options(label)
         self.refresh_label_buttons()
         self.save_current_annotation()
+
+    def _add_desc_options(self, label):
+        """Append this label’s option‐rows at the bottom of the container."""
+        phrases_map = self.data_config.get("common_phrases", {})
+        sep = self.data_config.get("seperator", "")
+        frames = []
+        for row in phrases_map.get(label, []):
+            rf = ttk.Frame(self.desc_options_container)
+            rf.pack(fill=tk.X, pady=(2,0))
+            for opt in row:
+                btn = ttk.Button(rf, text=opt,
+                                 command=lambda o=opt, s=sep: self.append_desc_option(o, s))
+                btn.pack(side=tk.LEFT, padx=2)
+            frames.append(rf)
+        self.desc_option_frames[label] = frames
+
+    def _remove_desc_options(self, label):
+        """Destroy Frames for that label’s options (when deselected)."""
+        for rf in self.desc_option_frames.pop(label, []):
+            rf.destroy()
 
     def on_label_click(self, label, key):
         # Handle label button click
@@ -295,11 +346,47 @@ class AnnotationUI(tk.Tk):
         }
         self.data_manager.set_current_annotation(annotation)
 
-    def append_desc_option(self, option_text, seperator=""):
-        # Append the selected description option to the entry field
+    def update_desc_options(self):
+        """
+        For each selected label, inject its option-rows under the entry.
+        Then adjust container height to show all rows, but at least reserve rows.
+        """
+        # clear old
+        for child in self.desc_options_container.winfo_children():
+            child.destroy()
+        self.desc_option_frames.clear()
+
+        phrases_map = self.data_config.get("common_phrases", {})
+        sep = self.data_config.get("seperator", "")
+
+        total_rows = 0
+        # add new rows for each selected label
+        for label in self.selected_labels:
+            rows = phrases_map.get(label, [])
+            for row in rows:
+                rf = ttk.Frame(self.desc_options_container)
+                rf.pack(fill=tk.X, pady=(2,0))
+                for opt in row:
+                    btn = ttk.Button(rf, text=opt,
+                                     command=lambda o=opt: self.append_desc_option(o, sep))
+                    btn.pack(side=tk.LEFT, padx=2)
+                total_rows += 1
+                # store if later removal per-label needed
+                self.desc_option_frames.setdefault(label, []).append(rf)
+
+        # compute new container height
+        display_rows = max(total_rows, self.desc_reserve)
+        new_height = display_rows * self.desc_row_height
+        self.desc_options_container.configure(height=new_height)
+
+    def append_desc_option(self, option_text, separator=""):
+        """
+        Append option_text + separator to the end of desc_entry,
+        and immediately save annotation.
+        """
         current = self.desc_entry.get()
         self.desc_entry.delete(0, tk.END)
-        self.desc_entry.insert(tk.END, current + option_text + seperator)
+        self.desc_entry.insert(tk.END, current + option_text + separator)
         self.save_current_annotation()
 
 if __name__ == "__main__":
