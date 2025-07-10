@@ -13,15 +13,23 @@ class DataManager:
 
     def load_data(self):
         """Load images and annotations from the data folder."""
-        all_files = [f for f in os.listdir(self.data_folder) 
-                    if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif'))]
+        all_files = [f for f in os.listdir(self.data_folder)
+                     if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif'))]
         self.image_files = sorted(all_files, key=lambda x: os.path.getmtime(os.path.join(self.data_folder, x)))
 
         if not os.path.exists(self.meta_file):
             self._initialize_dataset()
         else:
             with open(self.meta_file, 'r', encoding='utf-8') as f:
-                self.annotations = json.load(f)
+                data = json.load(f)
+            if isinstance(data, dict) and 'annotations' in data:
+                # New format: { "last_index": <int>, "annotations": { ... } }
+                self.annotations = data.get('annotations', {})
+                self.current_index = data.get('last_index', 0)
+            else:
+                # Legacy format: just a dict of annotations
+                self.annotations = data
+                self.current_index = 0
 
     def _initialize_dataset(self):
         self.annotations = {}
@@ -44,5 +52,10 @@ class DataManager:
         self.save_annotations()
 
     def save_annotations(self):
+        """Write annotations and the last viewed index back to disk."""
+        data = {
+            'last_index': self.current_index,
+            'annotations': self.annotations
+        }
         with open(self.meta_file, 'w', encoding='utf-8') as f:
-            json.dump(self.annotations, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False)
