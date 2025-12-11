@@ -84,7 +84,7 @@ class AnnotationUI(tk.Tk):
                 else:
                     messagebox.showwarning("Warning", "Please select a valid image data folder.")
         self.title(os.path.basename(self.data_folder))
-        self.data_manager = DataManager(self.data_folder)
+        self.data_manager = DataManager(self.data_folder, config=self.data_config.config)
         
         self._setup_ui()
         self._bind_events()
@@ -96,7 +96,7 @@ class AnnotationUI(tk.Tk):
         # Lift the window to the top and focus it
         self.lift()
         self.focus_force()
-        self.desc_entry.focus_set()
+        self.filename_entry.focus_set()
 
     def _on_close(self):
         # make sure the current annotation + index get saved
@@ -334,6 +334,8 @@ class AnnotationUI(tk.Tk):
         self.refresh_label_buttons()
         # after refreshing labels, populate options for existing labels
         self.update_desc_options()
+        # Ensure focus is on filename_entry so that hotkeys work immediately
+        self.filename_entry.focus_set()
 
     def _fit_image_to_canvas(self):
         """Calculate fit-to-canvas zoom and update min/max accordingly."""
